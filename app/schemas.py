@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr 
 from datetime import datetime
 
 
@@ -15,6 +15,17 @@ class PostCreate(PostBase):
 
 class Post(PostBase):
     id: int
+    created_at: datetime
+    # This is used to convert the SQLAlchemy model to a Pydantic model
+    model_config = ConfigDict(from_attributes=True)
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserOut(BaseModel):
+    id: int
+    email: EmailStr
     created_at: datetime
     # This is used to convert the SQLAlchemy model to a Pydantic model
     model_config = ConfigDict(from_attributes=True)
