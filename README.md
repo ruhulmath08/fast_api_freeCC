@@ -5,3 +5,4 @@
 3. [CRUD Operations](docs/3_crud_operations.md)
 4. [Connecting to a database](docs/4_connecting_to_a_database.md)
 5. [Crud operations using ORM](docs/5_crud_using_orm.md)
+6. [Add user authentication](docs/6_add_user_authentication.md)
