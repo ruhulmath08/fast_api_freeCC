@@ -85,17 +85,36 @@ class Post(Base):
 ## 5. Define the schemas
 
 ```python
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+from datetime import datetime
 
 
-class Post(BaseModel):
+class PostBase(BaseModel):
     title: str
     content: str
     published: bool = True
+
+
+class PostCreate(PostBase):
+    # pass means that the class is empty and will be inherited from the PostBase class
+    pass
+
+
+class Post(PostBase):
+    id: int
+    created_at: datetime
+    # This is used to convert the SQLAlchemy model to a Pydantic model
+    model_config = ConfigDict(from_attributes=True)
 ```
 
 - **Schemas are used to validate the data that is sent to the API.**
 - **Schemas are also used to define the response models.**
+- **`PostBase`** holds the shared fields (`title`, `content`, `published`).
+- **`PostCreate`** extends `PostBase` — used for incoming request bodies (no `id` or `created_at` yet).
+- **`Post`** extends `PostBase` — used for responses; includes `id` and `created_at` from the database.
+- **`model_config = ConfigDict(from_attributes=True)`** is the Pydantic V2 replacement for the
+  deprecated `class Config: orm_mode = True`. It allows Pydantic to read data directly from
+  SQLAlchemy ORM objects instead of only from plain dicts.
 
 ## 6. The project structure
 
@@ -117,6 +136,9 @@ app/
 
 ## 7. The API endpoints
 
+`response_model` tells FastAPI which Pydantic schema to use when serialising the response. FastAPI
+will filter out any fields not declared in that schema and validate the output automatically.
+
 ```python
 from fastapi import Depends, FastAPI, HTTPException, Response, status
 from sqlalchemy.orm import Session
@@ -134,31 +156,31 @@ def read_root():
     return {"message": "Hello, World!"}
 
 
-@app.get("/posts")
+@app.get("/posts", response_model=list[schemas.Post])
 def get_posts(db: Session = Depends(get_db)):
     # Get all posts from the database
     posts = db.query(models.Post).all()
     # Return the posts
-    return {"data": posts}
+    return posts
 
 
 # 201 Created: this request created a new post.
-@app.post("/createpost", status_code=status.HTTP_201_CREATED)
-def create_post(post: schemas.Post, db: Session = Depends(get_db)):
+@app.post("/createpost", status_code=status.HTTP_201_CREATED, response_model=schemas.Post)
+def create_post(post: schemas.PostCreate, db: Session = Depends(get_db)):
     # Create a new post
     new_post = models.Post(**post.model_dump())
     # Add the new post to the database
     db.add(new_post)
     # Commit the changes to the database
     db.commit()
-    # Refresh the new post to get the id
+    # Refresh the new post to get the id and created_at from the database
     db.refresh(new_post)
     # Return the new post
-    return {"message": "post created successfully", "data": new_post}
+    return new_post
 
 
 # Register this before /posts/{id}, or FastAPI treats "latest" as an id.
-@app.get("/posts/latest")
+@app.get("/posts/latest", response_model=schemas.Post)
 def get_latest_post(db: Session = Depends(get_db)):
     # Get the latest post from the database
     latest_post = db.query(models.Post).order_by(models.Post.id.desc()).first()
@@ -166,10 +188,10 @@ def get_latest_post(db: Session = Depends(get_db)):
     if latest_post is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No posts found")
     # Return the latest post
-    return {"latest_post": latest_post}
+    return latest_post
 
 
-@app.get("/posts/{id}")
+@app.get("/posts/{id}", response_model=schemas.Post)
 def get_post(id: int, db: Session = Depends(get_db)):
     # Get the post from the database by id
     post = db.query(models.Post).filter(models.Post.id == id).first()
@@ -177,7 +199,7 @@ def get_post(id: int, db: Session = Depends(get_db)):
     if post is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"post with id: {id} was not found")
     # Return the post
-    return {"post_detail": post}
+    return post
 
 
 # 204 No Content: this request deleted a post.
@@ -195,16 +217,25 @@ def delete_post(id: int, db: Session = Depends(get_db)):
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.put("/posts/{id}")
-def update_post(id: int, post: schemas.Post, db: Session = Depends(get_db)):
-    # Update the post in the database by id
-    updated_post = db.query(models.Post).filter(models.Post.id == id).update(post.model_dump(),
-                                                                             synchronize_session=False)
+@app.put("/posts/{id}", response_model=schemas.Post)
+def update_post(id: int, post: schemas.PostCreate, db: Session = Depends(get_db)):
+    # Build the query once so we can reuse it
+    post_query = db.query(models.Post).filter(models.Post.id == id)
     # If the post is not found, raise a 404 error (before committing)
-    if updated_post == 0:
+    if post_query.first() is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"post with id: {id} was not found")
+    # Update the post in the database
+    post_query.update(post.model_dump(), synchronize_session=False)
     # Commit the changes to the database
     db.commit()
-    # Return the updated post
-    return {"message": "post updated successfully", "data": updated_post}
+    # Re-fetch and return the updated post (update() returns row count, not the object)
+    return post_query.first()
 ```
+
+### Key points about `update_post`
+
+- `db.query(...).update(...)` returns the **number of rows affected** (an `int`), not the updated
+  ORM object. Returning that integer directly causes a `ResponseValidationError` because FastAPI
+  tries to serialise it as a `Post`.
+- The fix is to store the query in `post_query`, check existence first, run the update, commit,
+  then call `post_query.first()` again to re-fetch the now-updated row from the database.
