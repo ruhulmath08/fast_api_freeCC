@@ -6,3 +6,5 @@
 4. [Connecting to a database](docs/4_connecting_to_a_database.md)
 5. [Crud operations using ORM](docs/5_crud_using_orm.md)
 6. [Add user authentication](docs/6_add_user_authentication.md)
+7. [Separate the routers](docs/7_separate_the_routers.md)
+8. [JWT token authentication](docs/8_jwt_token_authentication.md)
