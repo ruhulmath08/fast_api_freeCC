@@ -137,7 +137,7 @@ router = APIRouter(
 )
 
 
-@router.post("/login")
+@router.post("/login", response_model=schemas.Token)
 def login(user_credentials: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
     # OAuth2PasswordRequestForm validates the form and provides .username and .password
     # query the user from the database by email
@@ -145,9 +145,9 @@ def login(user_credentials: OAuth2PasswordRequestForm = Depends(), db: Session =
     # if the user is not found, raise a 403 error
     if not user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Credentials")
-    # verify the password against the stored hash
+    # verify the password against the stored hash — wrong password returns 404
     if not utils.verify(user_credentials.password, user.password):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Credentials")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid Credentials")
     # create and return the access token
     access_token = oauth2.create_access_token(data={"user_id": user.id})
     return {"access_token": access_token, "token_type": "bearer"}
@@ -157,6 +157,8 @@ def login(user_credentials: OAuth2PasswordRequestForm = Depends(), db: Session =
 
 - `OAuth2PasswordRequestForm` reads a standard `application/x-www-form-urlencoded` body with `username` and `password`
   fields. FastAPI's OAuth2 form uses `username` — we map it to the user's email.
+- `response_model=schemas.Token` validates and serializes the response to the `Token` schema shape (`access_token` +
+  `token_type`).
 - No prefix is set on this router so the endpoint is exactly `POST /login`.
 - Register this router in `main.py` (see section 8).
 
@@ -167,7 +169,8 @@ Create `app/oauth2.py`. This file contains the JWT configuration, token creation
 
 ```python
 from jose import jwt, JWTError
-from . import schemas
+from sqlalchemy.orm import Session
+from . import schemas, database, models
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -177,7 +180,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 # --- JWT configuration ---
 SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f40ad1f5701fe593c56"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 
 def create_access_token(data: dict):
@@ -200,22 +203,26 @@ def verify_access_token(token: str, credentials_exception):
     return token_data
 
 
-def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(database.get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"}
     )
-    return verify_access_token(token, credentials_exception)
+    token_data = verify_access_token(token, credentials_exception)
+    user = db.query(models.User).filter(models.User.id == token_data.id).first()
+    if not user:
+        raise credentials_exception
+    return user
 ```
 
 ### Function breakdown
 
-| Function              | Purpose                                                                                                |
-| --------------------- | ------------------------------------------------------------------------------------------------------ |
-| `create_access_token` | Encodes the payload (user_id + expiry) into a signed JWT string                                        |
-| `verify_access_token` | Decodes and validates the JWT; raises `credentials_exception` on failure                               |
-| `get_current_user`    | FastAPI dependency — extracts the Bearer token from the request header and calls `verify_access_token` |
+| Function              | Purpose                                                                                                                          |
+|-----------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| `create_access_token` | Encodes the payload (user_id + expiry) into a signed JWT string                                                                  |
+| `verify_access_token` | Decodes and validates the JWT; raises `credentials_exception` on failure                                                         |
+| `get_current_user`    | FastAPI dependency — extracts the Bearer token, verifies it, queries the `User` from the database, and returns the `User` object |
 
 ### `OAuth2PasswordBearer`
 
@@ -224,27 +231,38 @@ automatically reads the `Authorization: Bearer <token>` header on protected rout
 
 ## 7. Protect routes with JWT
 
-Add `get_current_user` as a dependency to any route that requires authentication.
+Add `get_current_user` as a dependency to any route that requires authentication. In this project **every** `/posts`
+route is protected — both reads and writes.
 
 ```python
 from app import oauth2
 
 
+@router.get("/", response_model=list[schemas.Post])
+def get_posts(db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user)):
+    posts = db.query(models.Post).all()
+    return posts
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=schemas.Post)
-def create_post(
-        post: schemas.PostCreate,
-        db: Session = Depends(get_db),
-        get_current_user: dict = Depends(oauth2.get_current_user)  # ← protects this route
-):
+def create_post(post: schemas.PostCreate, db: Session = Depends(get_db),
+                current_user: int = Depends(oauth2.get_current_user)):
     new_post = models.Post(**post.model_dump())
     db.add(new_post)
     db.commit()
     db.refresh(new_post)
     return new_post
+
+# ... all remaining routes (latest, /{id}, delete, update) carry the same dependency
 ```
 
-If the request does not include a valid Bearer token, FastAPI automatically returns `401 Unauthorized` before the
-function body is ever reached.
+**Key points:**
+
+- The dependency parameter is named `current_user` — `get_current_user` returns the full `User` database object, so
+  any route handler can access `current_user.id`, `current_user.email`, etc.
+- If the request does not include a valid Bearer token, FastAPI returns `401 Unauthorized` before the function body
+  is ever reached.
+- Apply the dependency to every route you want protected; omit it from public routes like `POST /users`.
 
 ## 8. Full code
 
@@ -254,7 +272,7 @@ The updated file architecture:
 app/
 ├── routers/
 │   ├── auth.py         # Authentication router (POST /login)
-│   ├── post.py         # Posts router (JWT-protected create endpoint)
+│   ├── post.py         # Posts router (all routes JWT-protected)
 │   ├── user.py         # Users router
 │   └── __init__.py
 ├── main.py             # Registers all routers
@@ -287,7 +305,8 @@ app.include_router(auth.router)
 
 ```python
 from jose import jwt, JWTError
-from . import schemas
+from sqlalchemy.orm import Session
+from . import schemas, database, models
 from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -296,7 +315,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f40ad1f5701fe593c56"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 
 def create_access_token(data: dict):
@@ -319,13 +338,17 @@ def verify_access_token(token: str, credentials_exception):
     return token_data
 
 
-def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(database.get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"}
     )
-    return verify_access_token(token, credentials_exception)
+    token_data = verify_access_token(token, credentials_exception)
+    user = db.query(models.User).filter(models.User.id == token_data.id).first()
+    if not user:
+        raise credentials_exception
+    return user
 ```
 
 **routers/auth.py:**
@@ -341,13 +364,13 @@ router = APIRouter(
 )
 
 
-@router.post("/login")
+@router.post("/login", response_model=schemas.Token)
 def login(user_credentials: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
     user = db.query(models.User).filter(models.User.email == user_credentials.username).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Credentials")
     if not utils.verify(user_credentials.password, user.password):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Credentials")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid Credentials")
     access_token = oauth2.create_access_token(data={"user_id": user.id})
     return {"access_token": access_token, "token_type": "bearer"}
 ```
@@ -402,7 +425,7 @@ class TokenData(BaseModel):
     id: Optional[int] = None
 ```
 
-**routers/post.py (protected create endpoint):**
+**routers/post.py (all routes JWT-protected):**
 
 ```python
 from fastapi import Depends, HTTPException, Response, status, APIRouter
@@ -418,20 +441,56 @@ router = APIRouter(
 
 
 @router.get("/", response_model=list[schemas.Post])
-def get_posts(db: Session = Depends(get_db)):
+def get_posts(db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user)):
     posts = db.query(models.Post).all()
     return posts
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=schemas.Post)
-def create_post(
-        post: schemas.PostCreate,
-        db: Session = Depends(get_db),
-        get_current_user: dict = Depends(oauth2.get_current_user)
-):
+def create_post(post: schemas.PostCreate, db: Session = Depends(get_db),
+                current_user: int = Depends(oauth2.get_current_user)):
     new_post = models.Post(**post.model_dump())
     db.add(new_post)
     db.commit()
     db.refresh(new_post)
     return new_post
+
+
+@router.get("/latest", response_model=schemas.Post)
+def get_latest_post(db: Session = Depends(get_db),
+                    current_user: int = Depends(oauth2.get_current_user)):
+    latest_post = db.query(models.Post).order_by(models.Post.id.desc()).first()
+    if latest_post is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No posts found")
+    return latest_post
+
+
+@router.get("/{id}", response_model=schemas.Post)
+def get_post(id: int, db: Session = Depends(get_db),
+             current_user: int = Depends(oauth2.get_current_user)):
+    post = db.query(models.Post).filter(models.Post.id == id).first()
+    if post is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"post with id: {id} was not found")
+    return post
+
+
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_post(id: int, db: Session = Depends(get_db),
+                current_user: int = Depends(oauth2.get_current_user)):
+    deleted_post = db.query(models.Post).filter(models.Post.id == id).delete(synchronize_session=False)
+    if deleted_post == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"post with id: {id} was not found")
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put("/{id}", response_model=schemas.Post)
+def update_post(id: int, post: schemas.PostCreate, db: Session = Depends(get_db),
+                current_user: int = Depends(oauth2.get_current_user)):
+    post_query = db.query(models.Post).filter(models.Post.id == id)
+    if post_query.first() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"post with id: {id} was not found")
+    post_query.update(post.model_dump(), synchronize_session=False)
+    db.commit()
+    return post_query.first()
 ```
