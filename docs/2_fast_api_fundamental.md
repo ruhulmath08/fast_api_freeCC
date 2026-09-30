@@ -11,6 +11,7 @@ Here is a quick overview of the FastAPI fundamental concepts
 7. Structure the FastAPI project
 8. Connect to a database
 9. Schema models
+10. The `requirements.txt` file
 
 ## 1. Why we need `Schema`
 
@@ -117,10 +118,7 @@ A non-numeric string is rejected. The handler never runs, and FastAPI returns 42
   "detail": [
     {
       "type": "int_parsing",
-      "loc": [
-        "body",
-        "rating"
-      ],
+      "loc": ["body", "rating"],
       "msg": "Input should be a valid integer, unable to parse string as an integer",
       "input": "y"
     }
@@ -320,3 +318,28 @@ class PostCreate(PostBase):
     # pass means that the class is empty and will be inherited from the PostBase class
     pass
 ```
+
+## 10. The `requirements.txt` file
+
+The `requirements.txt` file is a file that contains the dependencies for the project.
+
+```text
+fastapi==0.116.1
+uvicorn==0.35.0
+sqlalchemy==2.0.41
+psycopg2-binary==2.9.13
+python-jose==3.5.0
+python-multipart==0.0.32
+passlib==1.7.4
+bcrypt==3.2.2
+pydantic==2.11.7
+pydantic-settings==2.10.1
+```
+
+We can install the dependencies by running the following command:
+
+```bash
+pip install -r requirements.txt
+```
+
+This will install all the dependencies for the project.
