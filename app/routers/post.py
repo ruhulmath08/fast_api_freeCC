@@ -11,7 +11,7 @@ router = APIRouter(
 
 
 @router.get("/", response_model=list[schemas.Post])
-def get_posts(db: Session = Depends(get_db)):
+def get_posts(db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user)):
     # Get all posts from the database
     posts = db.query(models.Post).all()
     # Return the posts
@@ -21,7 +21,7 @@ def get_posts(db: Session = Depends(get_db)):
 # 201 Created: this request created a new post.
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=schemas.Post)
 def create_post(post: schemas.PostCreate, db: Session = Depends(get_db),
-                get_current_user: dict = Depends(oauth2.get_current_user)):
+                current_user: int = Depends(oauth2.get_current_user)):
     # Create a new post
     new_post = models.Post(**post.model_dump())
     # Add the new post to the database
@@ -36,7 +36,8 @@ def create_post(post: schemas.PostCreate, db: Session = Depends(get_db),
 
 # Register this before /posts/{id}, or FastAPI treats "latest" as an id.
 @router.get("/latest", response_model=schemas.Post)
-def get_latest_post(db: Session = Depends(get_db)):
+def get_latest_post(db: Session = Depends(get_db),
+                    current_user: int = Depends(oauth2.get_current_user)):
     # Get the latest post from the database
     latest_post = db.query(models.Post).order_by(models.Post.id.desc()).first()
     # If no posts exist, raise a 404 error
@@ -47,7 +48,8 @@ def get_latest_post(db: Session = Depends(get_db)):
 
 
 @router.get("/{id}", response_model=schemas.Post)
-def get_post(id: int, db: Session = Depends(get_db)):
+def get_post(id: int, db: Session = Depends(get_db),
+             current_user: int = Depends(oauth2.get_current_user)):
     # Get the post from the database by id
     post = db.query(models.Post).filter(models.Post.id == id).first()
     # If the post is not found, raise a 404 error
@@ -60,7 +62,8 @@ def get_post(id: int, db: Session = Depends(get_db)):
 # 204 No Content: this request deleted a post.
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 # We must specify the type of the parameter to avoid type errors
-def delete_post(id: int, db: Session = Depends(get_db)):
+def delete_post(id: int, db: Session = Depends(get_db),
+                current_user: int = Depends(oauth2.get_current_user)):
     # Delete the post from the database by id
     deleted_post = db.query(models.Post).filter(models.Post.id == id).delete(synchronize_session=False)
     # If the post is not found, raise a 404 error (before committing)
@@ -73,7 +76,8 @@ def delete_post(id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{id}", response_model=schemas.Post)
-def update_post(id: int, post: schemas.PostCreate, db: Session = Depends(get_db)):
+def update_post(id: int, post: schemas.PostCreate, db: Session = Depends(get_db),
+                current_user: int = Depends(oauth2.get_current_user)):
     # Build the query once so we can reuse it
     post_query = db.query(models.Post).filter(models.Post.id == id)
     # If the post is not found, raise a 404 error (before committing)
