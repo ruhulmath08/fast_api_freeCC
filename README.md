@@ -8,3 +8,4 @@
 6. [Add user authentication](docs/6_add_user_authentication.md)
 7. [Separate the routers](docs/7_separate_the_routers.md)
 8. [JWT token authentication](docs/8_jwt_token_authentication.md)
+9. [Postman advanced settings](docs/9_postman_advanced_settings.md)
