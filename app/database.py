@@ -1,10 +1,13 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from .config import settings
 
 # 'postgresql://<username>:<password>@<host>:<port>/<database_name>'
 # We are using the PostgreSQL database
-SQLALCHEMY_DATABASE_URL = 'postgresql+psycopg2://postgres:root@localhost:5432/fastapi'
+SQLALCHEMY_DATABASE_URL = (f'postgresql+psycopg2://{settings.database_username}:'
+                           f'{settings.database_password}@{settings.database_hostname}'
+                           f':{settings.database_port}/{settings.database_name}')
 
 # Create the engine
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
