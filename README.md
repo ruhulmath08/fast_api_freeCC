@@ -10,3 +10,4 @@
 8. [JWT token authentication](docs/8_jwt_token_authentication.md)
 9. [Postman advanced settings](docs/9_postman_advanced_settings.md)
 10. [Database relationships](docs/10_database_relationships.md)
+11. [Add option for filtering posts](docs/11_add_option_for_filtering_posts.md)
