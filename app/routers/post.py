@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import Depends, HTTPException, Response, status, APIRouter
 from sqlalchemy.orm import Session
 
@@ -11,12 +12,17 @@ router = APIRouter(
 
 
 @router.get("/", response_model=list[schemas.Post])
-def get_posts(db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user)):
-    # Get all posts from the database
-    posts = db.query(models.Post).all()
-    # Get all posts from the database for the current user
-    # posts = db.query(models.Post).filter(models.Post.owner_id == current_user.id).all()
-    # Return the posts
+# limit: int = 10 is the default value for the limit parameter
+def get_posts(db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user),
+              limit: int = 10, skip: int = 0, search: Optional[str] = ""):
+    # Get the posts from the database with the limit
+    posts = (
+        db.query(models.Post)
+        .filter(models.Post.title.contains(search))
+        .limit(limit)
+        .offset(skip)
+        .all()
+    )
     return posts
 
 
@@ -54,7 +60,6 @@ def get_post(id: int, db: Session = Depends(get_db),
              current_user: models.User = Depends(oauth2.get_current_user)):
     # Get the post from the database by id
     post = db.query(models.Post).filter(models.Post.id == id).first()
-
     # If the post is not found, raise a 404 error
     if post is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"post with id: {id} was not found")
