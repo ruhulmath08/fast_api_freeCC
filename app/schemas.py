@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, conint
 from datetime import datetime
 
 
@@ -32,6 +32,10 @@ class Post(PostBase):
     # This is used to convert the SQLAlchemy model to a Pydantic model
     model_config = ConfigDict(from_attributes=True)
 
+class PostOut(BaseModel):
+    Post: Post
+    votes: int
+
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -50,3 +54,7 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     id: Optional[int] = None
+
+class Vote(BaseModel):
+    post_id: int
+    dir: conint(le=1)
