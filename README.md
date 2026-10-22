@@ -14,3 +14,6 @@
 12. [Add configuration settings](docs/12_add_configuration_settings.md)
 13. [Voting/Like system](docs/13_voting_like_system.md)
 14. [Database joining](docs/14_database_joining.md)
+15. [Limitation of SQLAlchemy](docs/15_limitation_of_sqlalchemy.md)
+16. [Database migrations](docs/16_database_migrations.md)
+17. [Migrations using alembic](docs/17_migrations_using_alembic.md)
