@@ -17,3 +17,4 @@
 15. [Limitation of SQLAlchemy](docs/15_limitation_of_sqlalchemy.md)
 16. [Database migrations](docs/16_database_migrations.md)
 17. [Migrations using alembic](docs/17_migrations_using_alembic.md)
+18. [Handle request from web browser](docs/18_handle_request_from_web_browser.md)
