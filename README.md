@@ -18,3 +18,4 @@
 16. [Database migrations](docs/16_database_migrations.md)
 17. [Migrations using alembic](docs/17_migrations_using_alembic.md)
 18. [Handle request from web browser](docs/18_handle_request_from_web_browser.md)
+19. [Add requirements.txt file](docs/19_add_requirements_txt_file.md)
