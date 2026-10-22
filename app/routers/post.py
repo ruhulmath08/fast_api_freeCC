@@ -12,6 +12,10 @@ router = APIRouter(
 )
 
 
+@router.get("/")
+def root():
+    return {"message": "Hello World"}
+
 @router.get("/", response_model=list[schemas.PostOut])
 # limit: int = 10 is the default value for the limit parameter
 def get_posts(db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user),
